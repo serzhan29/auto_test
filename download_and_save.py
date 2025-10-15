@@ -252,35 +252,37 @@ def logout(driver):
 
 
 # ---------------- MAIN ----------------
+# ---------------- MAIN ----------------
 def main():
-    # проверка входного файла (test_results.xlsx должен быть уже создан первым скриптом)
+    # проверяем наличие файла результатов
     if not RESULTS_FILE.exists():
         print("❌ Нет файла test_results.xlsx — сначала нужно запустить первый скрипт.")
         sys.exit(1)
 
-    # читаем таблицу
+    # читаем Excel
     df = pd.read_excel(RESULTS_FILE, engine="openpyxl", dtype=str).fillna("")
 
+    # инициализация браузера
     driver = start_driver(CHROMEDRIVER_PATH, headless=HEADLESS)
+
+    # общая папка для всех сертификатов
+    BASE_DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    set_download_dir(driver, BASE_DOWNLOAD_DIR)
 
     new_results = []
 
-    # проходим по записям с порядковым номером
     for index, row in enumerate(df.itertuples(index=False), start=1):
-        # Получаем поля безопасно
         status = getattr(row, "Status", "") or ""
         email = (getattr(row, "Email", "") or "").strip()
         full_name = (getattr(row, "FullName", "") or "").strip()
         iin = (getattr(row, "IIN", "") or "").strip()
 
-        # Если статус не указывает на завершённый тест — пропускаем (как в твоей логике)
+        # пропускаем, если тест не сдан
         if status not in ("DONE", "OK"):
             print(f"⏭️ Пропускаю {email} (статус {status})")
-            # сохраняем исходную строку без изменений
             try:
                 new_results.append(row._asdict())
             except Exception:
-                # запасной вариант — сделать словарь вручную
                 new_results.append({
                     "IIN": iin,
                     "Email": email,
@@ -291,42 +293,41 @@ def main():
                 })
             continue
 
-        # Формируем lastname / firstname
-        parts = full_name.split()
-        lastname = parts[0] if len(parts) >= 1 else "Unknown"
-        firstname = parts[1] if len(parts) >= 2 else ""
-
-        # Порядковый номер в папке (3 цифры с ведущими нулями)
-        folder_name = f"{index:03d}_{lastname}_{firstname}_{iin}"
-        user_dir = BASE_DOWNLOAD_DIR / folder_name
-
         print(f"\n==============================\n👤 [{index:03d}] {full_name} ({email})")
 
-        # Вход
+        # вход
         if not login(driver, email, PASSWORD):
             print(f"❌ Не удалось войти: {email}")
-            # создаём запись с ошибкой входа
-            new_row = {
+            new_results.append({
                 "IIN": iin,
                 "Email": email,
                 "FullName": full_name,
                 "Status": "FAILED",
                 "Score": "N/A",
                 "Message": "Ошибка входа"
-            }
-            new_results.append(new_row)
+            })
             continue
 
-        # Открываем страницу результатов и скачиваем
+        # открываем страницу результатов
         if open_results_page(driver):
-            score = download_certificates(driver, user_dir)
+            # скачиваем только СЕРТИФИКАТ
+            print("📜 Ищу сертификат для скачивания...")
+            try:
+                WebDriverWait(driver, MID_WAIT).until(
+                    EC.presence_of_element_located((By.XPATH, "//p[contains(text(), 'Сертификат доступен')]"))
+                )
+                click_get_and_download(driver, "Сертификат доступен", BASE_DOWNLOAD_DIR, f"{iin}_{full_name}_Сертификат.pdf")
+                msg = "Сертификат скачан"
+            except TimeoutException:
+                msg = "⚠️ Сертификат не найден"
+
             new_row = {
                 "IIN": iin,
                 "Email": email,
                 "FullName": full_name,
                 "Status": "OK",
-                "Score": score,
-                "Message": "Сертификаты скачаны"
+                "Score": getattr(row, "Score", ""),
+                "Message": msg
             }
         else:
             new_row = {
@@ -340,19 +341,18 @@ def main():
 
         new_results.append(new_row)
 
-        # Выход и небольшая пауза
+        # выходим из аккаунта
         logout(driver)
         time.sleep(DELAY)
 
-    # закрываем драйвер и сохраняем результаты
     try:
         driver.quit()
     except Exception:
         pass
 
-    # Сохраняем в исходный файл (перезапись)
     pd.DataFrame(new_results).to_excel(RESULTS_FILE, index=False)
     print("\n✅ Все сертификаты скачаны и сохранены в папке 'downloads'")
+
 
 
 
