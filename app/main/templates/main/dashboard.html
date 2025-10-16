@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container mt-4">
+  <h2>📊 Панель автоматизации</h2>
+  <p>Всего пользователей: <b>{{ total }}</b></p>
+
+  <table class="table table-bordered">
+    <thead>
+      <tr>
+        <th>Статус</th>
+        <th>Количество</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for s in stats %}
+      <tr>
+        <td>{{ s.status }}</td>
+        <td>{{ s.count }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <div class="mt-3">
+    <a href="{% url 'start_registration' %}" class="btn btn-primary">🚀 Начать регистрацию</a>
+    <a href="{% url 'start_testing' %}" class="btn btn-success">🧠 Сдать тесты</a>
+    <a href="{% url 'start_downloads' %}" class="btn btn-info">📥 Скачать сертификаты</a>
+  </div>
+</div>
+{% endblock %}
