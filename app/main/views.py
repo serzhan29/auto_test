@@ -1,13 +1,14 @@
 # main/views.py
 from django.http import JsonResponse
-from django.shortcuts import render
+from django.shortcuts import render, redirect
 from django.db.models import Q
 from .models import UserAccount
-from .registration_manager import start_registration, stop_registration, get_status
+from . import registration_manager, test_manager, certificate_manager
+
 
 def dashboard(request):
     query = request.GET.get("q", "")
-    sort = request.GET.get("sort", "id")  # сортировка
+    sort = request.GET.get("sort", "id")
 
     users = UserAccount.objects.all()
 
@@ -40,6 +41,11 @@ def dashboard(request):
 
     latest_users = users[:5]
 
+    # 👇 теперь добавляем все три состояния Selenium-процессов
+    reg_stats = registration_manager.get_status()
+    test_stats = test_manager.get_status()
+    download_stats = certificate_manager.get_status()
+
     context = {
         "total_users": total_users,
         "reg_count": reg_count,
@@ -50,16 +56,41 @@ def dashboard(request):
         "latest_users": latest_users,
         "query": query,
         "sort": sort,
-        "status": get_status(),  # состояние Selenium-процесса
+
+        # передаём три отдельных состояния
+        "reg_stats": reg_stats,
+        "test_stats": test_stats,
+        "download_stats": download_stats,
     }
+
     return render(request, "main/dashboard.html", context)
 
 
-def start_process(request):
-    ok = start_registration()
-    return JsonResponse({"ok": ok})
+# ===== Управление регистрацией =====
+def start_registration_view(request):
+    registration_manager.start_registration()
+    return redirect("dashboard")
+
+def stop_registration_view(request):
+    registration_manager.stop_registration()
+    return redirect("dashboard")
 
 
-def stop_process(request):
-    stop_registration()
-    return JsonResponse({"ok": True})
+# ===== Управление тестированием =====
+def start_testing_view(request):
+    test_manager.start_testing()
+    return redirect("dashboard")
+
+def stop_testing_view(request):
+    test_manager.stop_testing()
+    return redirect("dashboard")
+
+
+# ===== Управление сертификатами =====
+def start_downloads_view(request):
+    certificate_manager.start_downloading()
+    return redirect("dashboard")
+
+def stop_downloads_view(request):
+    certificate_manager.stop_downloading()
+    return redirect("dashboard")
