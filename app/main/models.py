@@ -24,6 +24,14 @@ class UserAccount(models.Model):
     created_at = models.DateTimeField("Создан", auto_now_add=True)
     updated_at = models.DateTimeField("Обновлён", auto_now=True)
 
+    # Отдельные флаги для удобной фильтрации
+    is_registered = models.BooleanField(default=False)
+    is_tested = models.BooleanField(default=False)
+    is_downloaded = models.BooleanField(default=False)
+    has_error = models.BooleanField(default=False)
+
+    updated_at = models.DateTimeField(auto_now=True)
+
     def __str__(self):
         return f"{self.full_name} ({self.email})"
 

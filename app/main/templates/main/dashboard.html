@@ -1,30 +1,67 @@
-{% extends "base.html" %}
-{% block content %}
-<div class="container mt-4">
-  <h2>📊 Панель автоматизации</h2>
-  <p>Всего пользователей: <b>{{ total }}</b></p>
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>Панель регистрации</title>
+<style>
+body { font-family: Arial; background:#fafafa; padding:40px; }
+h1 { text-align:center; }
+.stats { display:grid; grid-template-columns:repeat(5,1fr); gap:10px; margin:20px 0; }
+.card { background:white; border-radius:8px; padding:20px; box-shadow:0 0 6px #ccc; text-align:center; }
+button { padding:10px 15px; border:none; border-radius:6px; cursor:pointer; font-weight:bold; margin:5px; }
+.start { background:#28a745; color:white; }
+.stop { background:#dc3545; color:white; }
+</style>
+</head>
+<body>
+<h1>Панель управления</h1>
 
-  <table class="table table-bordered">
-    <thead>
-      <tr>
-        <th>Статус</th>
-        <th>Количество</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for s in stats %}
-      <tr>
-        <td>{{ s.status }}</td>
-        <td>{{ s.count }}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-
-  <div class="mt-3">
-    <a href="{% url 'start_registration' %}" class="btn btn-primary">🚀 Начать регистрацию</a>
-    <a href="{% url 'start_testing' %}" class="btn btn-success">🧠 Сдать тесты</a>
-    <a href="{% url 'start_downloads' %}" class="btn btn-info">📥 Скачать сертификаты</a>
-  </div>
+<div class="stats">
+  <div class="card">Всего: <b>{{ total_users }}</b></div>
+  <div class="card" style="background:#d4edda;">Зарегистрированы: <b>{{ reg_count }}</b></div>
+  <div class="card" style="background:#cce5ff;">Сдали тест: <b>{{ test_count }}</b></div>
+  <div class="card" style="background:#ffeeba;">Сертификаты: <b>{{ dl_count }}</b></div>
+  <div class="card" style="background:#f8d7da;">Ошибки: <b>{{ err_count }}</b></div>
 </div>
-{% endblock %}
+
+<div style="text-align:center;">
+  <button class="start" onclick="start()">🚀 Запустить регистрацию</button>
+  <button class="stop" onclick="stop()">⏹ Остановить</button>
+</div>
+
+<form method="get" style="text-align:center;margin:20px;">
+  <input type="text" name="q" placeholder="Поиск по ФИО, ИИН или email" value="{{ query }}">
+  <button type="submit">🔍 Найти</button>
+  <select name="sort" onchange="this.form.submit()">
+    <option value="">Сортировать...</option>
+    <option value="registered">✅ Зарегистрированные</option>
+    <option value="tested">🧠 Сдавшие тест</option>
+    <option value="downloaded">📜 С сертификатом</option>
+    <option value="errors">⚠ Ошибки</option>
+  </select>
+</form>
+
+<table border="1" width="100%" style="border-collapse:collapse;">
+<tr style="background:#f0f0f0;"><th>ID</th><th>ФИО</th><th>Email</th><th>Статус</th><th>Сообщение</th></tr>
+{% for u in latest_users %}
+<tr>
+  <td>{{ u.id }}</td>
+  <td>{{ u.full_name }}</td>
+  <td>{{ u.email }}</td>
+  <td>{{ u.status }}</td>
+  <td>{{ u.message|default:"-" }}</td>
+</tr>
+{% endfor %}
+</table>
+
+<p style="text-align:center;margin-top:20px;color:#555;">
+{% if status.running %}🟢 Процесс регистрации идёт...{% else %}🔴 Остановлен{% endif %}
+</p>
+
+<script>
+function start(){ fetch('/start/').then(r=>r.json()).then(()=>location.reload()) }
+function stop(){ fetch('/stop/').then(r=>r.json()).then(()=>location.reload()) }
+setInterval(()=>location.reload(), 10000);
+</script>
+</body>
+</html>
