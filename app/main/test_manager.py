@@ -151,30 +151,50 @@ def answer_questions(driver):
 
 def finish_test(driver):
     try:
-        safe_click(driver, "//button[contains(text(), 'Завершить')]", wait=8)
+        # Нажимаем "Завершить"
+        safe_click(driver, "//button[contains(text(), 'Завершить')]", wait=10)
+
+        # Подтверждаем в модалке
         confirm = WebDriverWait(driver, 8).until(
             EC.element_to_be_clickable((By.XPATH, "//div[contains(@role, 'dialog')]//button[contains(., 'Завершить')]"))
         )
         driver.execute_script("arguments[0].click();", confirm)
 
-        el = WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.XPATH, "//h2[contains(text(), '%')]"))
+        # Ждём страницу с результатом
+        el = WebDriverWait(driver, 15).until(
+            EC.presence_of_element_located((By.XPATH, "//h2[contains(@class,'MuiTypography-h2')]"))
         )
-        return el.text.strip(), True
-    except Exception:
+        score_text = el.text.strip()
+
+        # В некоторых случаях может быть "100%", "85%", "75%" и т.д.
+        # Уберём лишние символы, если они есть
+        match = re.search(r"(\d+)%", score_text)
+        score = match.group(1) + "%" if match else score_text
+
+        print(f"✅ Тест завершён, результат: {score}")
+        return score, True
+    except Exception as e:
+        print(f"❌ Ошибка при завершении теста: {e}")
         return "N/A", False
+
 
 
 def logout(driver):
     try:
         driver.get(DASHBOARD_URL)
-        btn = WebDriverWait(driver, 5).until(
+        btn = WebDriverWait(driver, 6).until(
             EC.element_to_be_clickable((By.XPATH, "//button[contains(., 'Выйти из системы')]"))
         )
         driver.execute_script("arguments[0].click();", btn)
-        WebDriverWait(driver, 5).until(lambda d: "login" in d.current_url)
+        WebDriverWait(driver, 6).until(lambda d: "login" in d.current_url)
+        print("🚪 Вышел из аккаунта")
     except Exception:
-        pass
+        try:
+            driver.get(LOGIN_URL)
+            print("🚪 Вышел принудительно (через переход на /login)")
+        except Exception:
+            pass
+
 
 
 # ----------------- ОСНОВНОЙ ПОТОК -----------------
@@ -182,56 +202,113 @@ def test_process():
     global stop_requested
     stop_requested = False
 
-    driver = start_driver()
     users = UserAccount.objects.filter(status="registered")
+    driver = None
+    processed = 0
 
-    for user in users:
-        if stop_requested:
-            break
+    while True:
+        try:
+            if not driver or processed % 20 == 0:
+                # перезапуск браузера каждые 20 пользователей
+                if driver:
+                    try:
+                        driver.quit()
+                    except Exception:
+                        pass
+                driver = start_driver()
+                print("♻️ Перезапуск браузера Selenium")
 
-        print(f"👤 {user.email} — прохожу тест")
-        user.status = "testing"
-        user.save()
+            for user in users:
+                if stop_requested:
+                    print("⏸ Тестирование остановлено пользователем")
+                    break
 
-        if not login(driver, user.email, PASSWORD):
-            user.status = "failed"
-            user.has_error = True
-            user.message = "Ошибка входа"
-            user.save()
+                # если уже сдан или завершён — пропускаем
+                if user.status in ["tested", "completed"]:
+                    continue
+
+                print(f"👤 {user.email} — прохожу тест")
+                user.status = "testing"
+                user.save()
+
+                try:
+                    if not login(driver, user.email, PASSWORD):
+                        user.status = "failed"
+                        user.has_error = True
+                        user.message = "Ошибка входа"
+                        user.save()
+                        continue
+
+                    state = check_test_status(driver)
+
+                    if state == "done":
+                        user.status = "tested"
+                        user.is_tested = True
+                        user.message = "Уже сдан"
+                        user.save()
+
+
+                    elif state == "available":
+
+                        answer_questions(driver)
+
+                        score, ok = finish_test(driver)
+
+                        if ok:
+
+                            user.status = "tested"
+
+                            user.is_tested = True
+
+                            user.score = score
+
+                            user.message = f"Тест сдан ({score})"
+
+                        else:
+                            user.status = "failed"
+                            user.has_error = True
+                            user.message = "Ошибка завершения теста"
+                        user.save()
+
+                    else:
+                        user.status = "failed"
+                        user.has_error = True
+                        user.message = "Тест не найден"
+                        user.save()
+
+                except Exception as e:
+                    print(f"❌ Ошибка на пользователе {user.email}: {e}")
+                    user.status = "failed"
+                    user.has_error = True
+                    user.message = f"Исключение: {e}"
+                    user.save()
+
+                finally:
+                    logout(driver)
+                    time.sleep(DELAY)
+                    processed += 1
+
+            # если дошли до конца списка — берём снова (на случай новых пользователей)
+            users = UserAccount.objects.filter(status="registered")
+
+            if stop_requested:
+                break
+
+        except Exception as e:
+            print(f"💥 Критическая ошибка, перезапуск процесса: {e}")
+            try:
+                if driver:
+                    driver.quit()
+            except Exception:
+                pass
+            time.sleep(2)
+            driver = start_driver()
             continue
 
-        state = check_test_status(driver)
+    if driver:
+        driver.quit()
+    print("✅ Процесс тестирования завершён")
 
-        if state == "done":
-            user.status = "tested"
-            user.is_tested = True
-            user.message = "Уже сдан"
-            user.save()
-
-        elif state == "available":
-            answer_questions(driver)
-            score, ok = finish_test(driver)
-            if ok:
-                user.status = "tested"
-                user.is_tested = True
-                user.score = score
-                user.message = f"Тест сдан ({score})"
-            else:
-                user.status = "failed"
-                user.has_error = True
-                user.message = "Ошибка завершения теста"
-            user.save()
-
-        else:
-            user.status = "failed"
-            user.has_error = True
-            user.message = "Тест не найден"
-            user.save()
-
-        logout(driver)
-        time.sleep(DELAY)
-
-    driver.quit()
 
 
 def start_testing():

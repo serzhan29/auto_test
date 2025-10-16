@@ -4,6 +4,7 @@ from .models import UserAccount, AutomationLog
 
 class UserAccountAdmin(admin.ModelAdmin):
     list_display = ["id", "full_name", "email", "iin"]
+    list_filter = ["status"]
 
 
 

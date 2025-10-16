@@ -207,37 +207,86 @@ def download_process():
     global stop_requested
     stop_requested = False
 
-    driver = start_driver()
-    users = UserAccount.objects.filter(is_tested=True, is_downloaded=False, has_error=False)
-    total = users.count()
+    processed = 0
+    driver = None
 
-    print(f"📥 Начинаю скачивание сертификатов для {total} пользователей")
+    while not stop_requested:
+        try:
+            # перезапускаем браузер каждые 20 пользователей
+            if not driver or processed % 20 == 0:
+                if driver:
+                    try:
+                        driver.quit()
+                    except Exception:
+                        pass
+                driver = start_driver()
+                print("♻️ Перезапущен браузер Selenium")
 
-    for i, user in enumerate(users, start=1):
-        if stop_requested:
-            print("⏹ Остановлено пользователем")
-            break
+            users = UserAccount.objects.filter(
+                is_tested=True, is_downloaded=False, has_error=False
+            )
 
-        print(f"\n[{i}/{total}] 👤 {user.full_name} ({user.email})")
+            if not users.exists():
+                print("⏳ Новых сертификатов нет, жду 60 секунд...")
+                time.sleep(60)
+                continue
 
-        if not login(driver, user.email):
-            user.has_error = True
-            user.message = "Ошибка входа"
-            user.save()
-            continue
+            total = users.count()
+            print(f"📥 Найдено {total} пользователей для скачивания")
 
-        if open_results_page(driver):
-            download_certificate(driver, user)
-        else:
-            user.has_error = True
-            user.message = "Ошибка открытия результатов"
-            user.save()
+            for user in users:
+                if stop_requested:
+                    print("⏹ Остановлено пользователем")
+                    break
 
-        logout(driver)
-        time.sleep(1)
+                print(f"\n👤 {user.full_name} ({user.email})")
 
-    driver.quit()
-    print("✅ Скачивание завершено")
+                try:
+                    if not login(driver, user.email):
+                        user.has_error = True
+                        user.message = "Ошибка входа"
+                        user.save()
+                        continue
+
+                    if open_results_page(driver):
+                        download_certificate(driver, user)
+                    else:
+                        user.has_error = True
+                        user.message = "Ошибка открытия результатов"
+                        user.save()
+
+                except Exception as e:
+                    print(f"❌ Ошибка при скачивании для {user.email}: {e}")
+                    user.has_error = True
+                    user.message = f"Исключение: {e}"
+                    user.save()
+
+                finally:
+                    logout(driver)
+                    processed += 1
+                    time.sleep(1)
+
+            # пауза перед следующей проверкой
+            print("🔁 Проверяю снова через 30 секунд...")
+            time.sleep(30)
+
+        except Exception as e:
+            print(f"💥 Критическая ошибка: {e}. Перезапуск через 10 секунд.")
+            try:
+                if driver:
+                    driver.quit()
+            except Exception:
+                pass
+            time.sleep(10)
+            driver = start_driver()
+
+    if driver:
+        try:
+            driver.quit()
+        except Exception:
+            pass
+    print("✅ Процесс скачивания завершён")
+
 
 
 # ---------- УПРАВЛЕНИЕ ----------
