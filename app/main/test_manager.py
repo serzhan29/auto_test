@@ -12,7 +12,7 @@ from .models import UserAccount
 LOGIN_URL = "https://amlacademy.kz/finiq/login"
 DASHBOARD_URL = "https://amlacademy.kz/finiq/dashboard"
 PASSWORD = "Aa123456"
-DELAY = 0.4
+DELAY = 0.6  # задержка между пользователями
 
 ANSWERS = {
     1: "a", 2: "c", 3: "b", 4: "a", 5: "c",
@@ -41,6 +41,7 @@ def safe_click(driver, xpath, wait=5):
     try:
         el = WebDriverWait(driver, wait).until(EC.element_to_be_clickable((By.XPATH, xpath)))
         driver.execute_script("arguments[0].click();", el)
+        time.sleep(0.5)
         return True
     except Exception:
         return False
@@ -58,6 +59,7 @@ def get_question_number(driver):
 
 
 def normalize_to_first_question(driver):
+    """Переходит к первому вопросу"""
     for _ in range(25):
         try:
             qn = get_question_number(driver)
@@ -73,6 +75,7 @@ def normalize_to_first_question(driver):
 
 # ----------------- ОСНОВНЫЕ ПРОЦЕССЫ -----------------
 def login(driver, email, password):
+    """Авторизация"""
     driver.get(LOGIN_URL)
     try:
         WebDriverWait(driver, 8).until(EC.presence_of_element_located((By.XPATH, "//input[@type='email']")))
@@ -80,53 +83,69 @@ def login(driver, email, password):
         driver.find_element(By.XPATH, "//input[@type='password']").send_keys(password)
         safe_click(driver, "//button[contains(., 'Войти')]", wait=6)
         WebDriverWait(driver, 10).until(lambda d: DASHBOARD_URL in d.current_url)
+        print(f"✅ Вход выполнен: {email}")
         return True
     except Exception:
+        print(f"❌ Ошибка входа: {email}")
         return False
 
 
 def open_tests_page(driver):
+    """Открывает раздел тестов"""
     try:
         btn = WebDriverWait(driver, 6).until(
             EC.element_to_be_clickable((By.XPATH, "//button[contains(., 'Перейти к тестам')]"))
         )
         driver.execute_script("arguments[0].click();", btn)
-        time.sleep(0.8)
+        time.sleep(1.2)
         return True
     except Exception:
         return False
 
 
 def check_test_status(driver):
+    """Проверяет, доступен ли тест, и возвращает состояние"""
     try:
         open_tests_page(driver)
+        time.sleep(1)
 
-        # Проверяем "Мои тесты"
+        # "Мои тесты"
         my_tab = WebDriverWait(driver, 6).until(
             EC.element_to_be_clickable((By.XPATH, "//button[contains(., 'Мои тесты')]"))
         )
         driver.execute_script("arguments[0].click();", my_tab)
-        time.sleep(0.6)
+        time.sleep(0.8)
 
         if driver.find_elements(By.XPATH, "//button[contains(., 'Просмотреть результаты')]"):
             return "done"
 
-        # Проверяем "Доступные тесты"
+        # "Доступные тесты"
         available_tab = driver.find_element(By.XPATH, "//button[contains(., 'Доступные тесты')]")
         driver.execute_script("arguments[0].click();", available_tab)
-        time.sleep(0.5)
+        time.sleep(1)
+
+        # Проверяем "Failed to start exam session"
+        if driver.find_elements(By.XPATH, "//div[contains(., 'Failed to start exam session')]"):
+            print("⚠️ Ошибка: Failed to start exam session — сервер не запустил тест. Жду 3 сек и пробую заново...")
+            time.sleep(3)
+            driver.refresh()
+            time.sleep(2)
+            return check_test_status(driver)
 
         start_btns = driver.find_elements(By.XPATH, "//button[contains(., 'Начать тест')]")
         if start_btns:
             driver.execute_script("arguments[0].click();", start_btns[0])
+            time.sleep(2)
             return "available"
 
         return "none"
+
     except Exception:
         return "none"
 
 
 def answer_questions(driver):
+    """Отвечает на все вопросы"""
     normalize_to_first_question(driver)
     for i in range(1, 21):
         try:
@@ -144,30 +163,27 @@ def answer_questions(driver):
 
             if q_num < 20:
                 safe_click(driver, "//button[contains(., 'Далее')]", wait=3)
-            time.sleep(0.4)
+            time.sleep(0.5)
         except Exception:
             pass
 
 
 def finish_test(driver):
+    """Завершает тест и возвращает результат"""
     try:
-        # Нажимаем "Завершить"
         safe_click(driver, "//button[contains(text(), 'Завершить')]", wait=10)
+        time.sleep(1)
 
-        # Подтверждаем в модалке
         confirm = WebDriverWait(driver, 8).until(
             EC.element_to_be_clickable((By.XPATH, "//div[contains(@role, 'dialog')]//button[contains(., 'Завершить')]"))
         )
         driver.execute_script("arguments[0].click();", confirm)
+        time.sleep(2)
 
-        # Ждём страницу с результатом
         el = WebDriverWait(driver, 15).until(
             EC.presence_of_element_located((By.XPATH, "//h2[contains(@class,'MuiTypography-h2')]"))
         )
         score_text = el.text.strip()
-
-        # В некоторых случаях может быть "100%", "85%", "75%" и т.д.
-        # Уберём лишние символы, если они есть
         match = re.search(r"(\d+)%", score_text)
         score = match.group(1) + "%" if match else score_text
 
@@ -178,10 +194,11 @@ def finish_test(driver):
         return "N/A", False
 
 
-
 def logout(driver):
+    """Выходит из аккаунта"""
     try:
         driver.get(DASHBOARD_URL)
+        time.sleep(0.8)
         btn = WebDriverWait(driver, 6).until(
             EC.element_to_be_clickable((By.XPATH, "//button[contains(., 'Выйти из системы')]"))
         )
@@ -191,10 +208,9 @@ def logout(driver):
     except Exception:
         try:
             driver.get(LOGIN_URL)
-            print("🚪 Вышел принудительно (через переход на /login)")
+            print("🚪 Вышел принудительно (через /login)")
         except Exception:
             pass
-
 
 
 # ----------------- ОСНОВНОЙ ПОТОК -----------------
@@ -209,7 +225,6 @@ def test_process():
     while True:
         try:
             if not driver or processed % 20 == 0:
-                # перезапуск браузера каждые 20 пользователей
                 if driver:
                     try:
                         driver.quit()
@@ -223,7 +238,6 @@ def test_process():
                     print("⏸ Тестирование остановлено пользователем")
                     break
 
-                # если уже сдан или завершён — пропускаем
                 if user.status in ["tested", "completed"]:
                     continue
 
@@ -244,26 +258,18 @@ def test_process():
                     if state == "done":
                         user.status = "tested"
                         user.is_tested = True
-                        user.message = "Уже сдан"
+                        user.message = "✅ Уже сдан"
                         user.save()
 
-
                     elif state == "available":
-
                         answer_questions(driver)
-
                         score, ok = finish_test(driver)
 
                         if ok:
-
                             user.status = "tested"
-
                             user.is_tested = True
-
                             user.score = score
-
-                            user.message = f"Тест сдан ({score})"
-
+                            user.message = f"✅ Тест сдан ({score})"
                         else:
                             user.status = "failed"
                             user.has_error = True
@@ -273,7 +279,7 @@ def test_process():
                     else:
                         user.status = "failed"
                         user.has_error = True
-                        user.message = "Тест не найден"
+                        user.message = "❌ Тест не найден или не доступен"
                         user.save()
 
                 except Exception as e:
@@ -288,7 +294,6 @@ def test_process():
                     time.sleep(DELAY)
                     processed += 1
 
-            # если дошли до конца списка — берём снова (на случай новых пользователей)
             users = UserAccount.objects.filter(status="registered")
 
             if stop_requested:
@@ -301,14 +306,13 @@ def test_process():
                     driver.quit()
             except Exception:
                 pass
-            time.sleep(2)
+            time.sleep(3)
             driver = start_driver()
             continue
 
     if driver:
         driver.quit()
     print("✅ Процесс тестирования завершён")
-
 
 
 def start_testing():

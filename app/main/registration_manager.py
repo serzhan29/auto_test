@@ -15,7 +15,7 @@ REG_URL = BASE + "/finiq/registration"
 ORG = "Предприниматель города Кентау"
 PASSWORD = "Aa123456"
 CATEGORY = "Взрослый, Студент"
-DELAY = 0.4  # задержка между пользователями
+DELAY = 0.6  # между пользователями
 # =======================================================
 
 process_thread = None
@@ -29,12 +29,11 @@ def start_driver():
     options.add_argument("--disable-gpu")
     options.add_argument("--lang=ru")
     driver = webdriver.Chrome(options=options)
-    driver.implicitly_wait(2)
+    driver.implicitly_wait(3)
     return driver
 
 
-def safe_find(driver, by, selector, timeout=3):
-    """Безопасный поиск элемента"""
+def safe_find(driver, by, selector, timeout=4):
     try:
         return WebDriverWait(driver, timeout).until(
             EC.presence_of_element_located((by, selector))
@@ -48,7 +47,7 @@ def select_second_last_option(driver, dropdown_div, wait=3):
     try:
         driver.execute_script("arguments[0].scrollIntoView(true);", dropdown_div)
         dropdown_div.click()
-        time.sleep(0.3)
+        time.sleep(0.4)
         options = WebDriverWait(driver, wait).until(
             EC.presence_of_all_elements_located((By.XPATH, "//li | //div[@role='option']"))
         )
@@ -85,7 +84,7 @@ def select_category(driver, category_text="Взрослый, Студент"):
 # -------------------- Регистрация --------------------
 def register_one(driver, user):
     driver.get(REG_URL)
-    time.sleep(0.6)
+    time.sleep(1)
 
     try:
         fio = user.full_name.split()
@@ -101,14 +100,13 @@ def register_one(driver, user):
         if not hasattr(user, "phone") or not user.phone:
             user.phone = "+7777777" + str(random.randint(100, 999))
             user.save()
-
         driver.find_element(By.NAME, "phone").send_keys(user.phone)
         driver.find_element(By.NAME, "organization").send_keys(ORG)
         driver.find_element(By.NAME, "email").send_keys(user.email)
         driver.find_element(By.NAME, "password").send_keys(PASSWORD)
         driver.find_element(By.NAME, "confirmPassword").send_keys(PASSWORD)
 
-        # --- регион и категория
+        # --- выбор региона и категории
         region = safe_find(driver, By.ID, "region")
         if region:
             select_second_last_option(driver, region)
@@ -141,39 +139,40 @@ def register_one(driver, user):
         except TimeoutException:
             pass
 
+        time.sleep(2)
+
         # --- проверка результата
-        end_time = time.time() + 10  # максимум 10 секунд
+        end_time = time.time() + 12
         redirected = False
         already_exists = False
         phone_exists = False
+        registration_failed = False
         other_error = None
 
         while time.time() < end_time:
             current = driver.current_url
 
-            # ✅ успешный редирект на страницу логина
             if "/finiq/login" in current:
                 redirected = True
                 break
 
-            # ошибки
             if driver.find_elements(By.XPATH, "//p[contains(., 'Student with this email already exists')]"):
                 already_exists = True
                 break
-
             if driver.find_elements(By.XPATH, "//p[contains(., 'Student with this phone number already exists')]"):
                 phone_exists = True
                 break
+            if driver.find_elements(By.XPATH, "//div[contains(., 'Registration failed')]"):
+                registration_failed = True
+                break
 
-            # другие ошибки формы
             errors = driver.find_elements(By.XPATH, "//p[contains(@class,'Mui-error')] | //div[contains(@class,'MuiAlert-message')]")
             if errors:
                 other_error = errors[0].text.strip()
                 break
 
-            time.sleep(0.25)
+            time.sleep(0.3)
 
-        # --- сохраняем результат
         if redirected:
             user.status = "registered"
             user.is_registered = True
@@ -184,17 +183,21 @@ def register_one(driver, user):
             user.is_registered = True
             user.has_error = False
             user.message = "ℹ️ Пользователь уже зарегистрирован"
+        elif registration_failed:
+            user.status = "failed"
+            user.has_error = True
+            user.message = "❌ Registration failed (сервер не принял данные)"
         elif other_error:
             user.status = "failed"
-            user.is_registered = False
             user.has_error = True
             user.message = f"Ошибка: {other_error}"
         else:
             user.status = "failed"
-            user.is_registered = False
             user.has_error = True
             user.message = "⚠️ Не удалось завершить регистрацию (редиректа нет)"
+
         user.save()
+        time.sleep(1.2)
 
     except Exception as e:
         user.status = "failed"
@@ -202,6 +205,7 @@ def register_one(driver, user):
         user.has_error = True
         user.message = f"Исключение: {e}"
         user.save()
+        time.sleep(1)
 
 
 # -------------------- Основной процесс --------------------
@@ -230,8 +234,11 @@ def registration_process():
 
             for user in users:
                 if stop_requested:
-                    print("⏸ Остановлено пользователем")
+                    print("⏸ Регистрация остановлена пользователем")
                     break
+
+                if user.status in ["registered", "tested", "completed"]:
+                    continue
 
                 print(f"👤 Регистрирую: {user.full_name} ({user.email})")
                 register_one(driver, user)
@@ -253,10 +260,9 @@ def registration_process():
             driver.quit()
         except Exception:
             pass
-    print("✅ Регистрация завершена")
+    print("✅ Процесс регистрации завершён")
 
 
-# -------------------- Управление --------------------
 def start_registration():
     global process_thread, stop_requested
     if process_thread and process_thread.is_alive():
