@@ -12,6 +12,7 @@ def dashboard(request):
 
     users = UserAccount.objects.all()
 
+    # фильтрация по поиску
     if query:
         users = users.filter(
             Q(full_name__icontains=query) |
@@ -27,21 +28,13 @@ def dashboard(request):
     err_count = users.filter(has_error=True).count()
     pending_count = total_users - (reg_count + test_count + dl_count + err_count)
 
-    # сортировка
-    if sort == "errors":
-        users = users.filter(has_error=True)
-    elif sort == "registered":
-        users = users.filter(is_registered=True)
-    elif sort == "tested":
-        users = users.filter(is_tested=True)
-    elif sort == "downloaded":
-        users = users.filter(is_downloaded=True)
-    else:
-        users = users.order_by("-id")
+    # выборки по категориям
+    registered_users = users.filter(is_registered=True).order_by("-id")[:10]
+    tested_users = users.filter(is_tested=True).order_by("-id")[:10]
+    downloaded_users = users.filter(is_downloaded=True).order_by("-id")[:10]
+    error_users = users.filter(has_error=True).order_by("-id")  # 👈 пользователи с ошибками
 
-    latest_users = users[:5]
-
-    # 👇 теперь добавляем все три состояния Selenium-процессов
+    # статусы фоновых процессов
     reg_stats = registration_manager.get_status()
     test_stats = test_manager.get_status()
     download_stats = certificate_manager.get_status()
@@ -53,17 +46,20 @@ def dashboard(request):
         "dl_count": dl_count,
         "err_count": err_count,
         "pending_count": pending_count,
-        "latest_users": latest_users,
+        "registered_users": registered_users,
+        "tested_users": tested_users,
+        "downloaded_users": downloaded_users,
+        "error_users": error_users,  # 👈 передаём в шаблон
         "query": query,
         "sort": sort,
-
-        # передаём три отдельных состояния
         "reg_stats": reg_stats,
         "test_stats": test_stats,
         "download_stats": download_stats,
     }
 
     return render(request, "main/dashboard.html", context)
+
+
 
 
 # ===== Управление регистрацией =====

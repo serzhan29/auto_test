@@ -25,12 +25,24 @@ stop_requested = False
 # -------------------- Selenium helpers --------------------
 def start_driver():
     options = webdriver.ChromeOptions()
+    # 💡 включаем полностью скрытый headless-режим
+    options.add_argument("--headless=new")
+    options.add_argument("--window-size=1920,1080")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-gpu")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-software-rasterizer")
     options.add_argument("--lang=ru")
+    options.add_argument("--mute-audio")
+    options.add_argument("--log-level=3")
+    options.add_argument("--disable-extensions")
+    options.add_argument("--disable-infobars")
+    options.add_argument("--disable-notifications")
+
     driver = webdriver.Chrome(options=options)
     driver.implicitly_wait(3)
     return driver
+
 
 
 def safe_find(driver, by, selector, timeout=4):
@@ -62,23 +74,29 @@ def select_second_last_option(driver, dropdown_div, wait=3):
 
 
 def select_category(driver, category_text="Взрослый, Студент"):
-    """Выбирает категорию"""
+    """Всегда выбирает категорию, даже если она уже установлена"""
     try:
-        category_div = WebDriverWait(driver, 3).until(
+        category_div = WebDriverWait(driver, 5).until(
             EC.element_to_be_clickable((By.ID, "category"))
         )
         driver.execute_script("arguments[0].scrollIntoView(true);", category_div)
         category_div.click()
+        time.sleep(0.3)
 
-        option = WebDriverWait(driver, 3).until(
-            EC.element_to_be_clickable((By.XPATH, f"//li[contains(., '{category_text}')]"))
+        options = WebDriverWait(driver, 5).until(
+            EC.presence_of_all_elements_located((By.XPATH, "//li[contains(., 'Взрослый, Студент')]"))
         )
-        driver.execute_script("arguments[0].click();", option)
-        print(f"✅ Категория выбрана: {category_text}")
+        if not options:
+            raise Exception("Опция 'Взрослый, Студент' не найдена!")
+
+        driver.execute_script("arguments[0].click();", options[0])
+        print("✅ Категория выбрана: Взрослый, Студент")
         return True
+
     except Exception as e:
-        print(f"❌ Ошибка при выборе категории: {e}")
+        print(f"❌ Ошибка выбора категории: {e}")
         return False
+
 
 
 # -------------------- Регистрация --------------------

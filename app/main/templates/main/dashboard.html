@@ -222,6 +222,86 @@
   </p>
 </div>
 
+<!-- ==================== РАЗДЕЛ: ЗАРЕГИСТРИРОВАННЫЕ ==================== -->
+<div class="section">
+  <h2>👥 Зарегистрированные пользователи</h2>
+  <table>
+    <tr>
+      <th>ID</th>
+      <th>ФИО</th>
+      <th>Email</th>
+      <th>Комментарий</th>
+    </tr>
+    {% for u in registered_users %}
+    <tr>
+      <td>{{ u.id }}</td>
+      <td>{{ u.full_name }}</td>
+      <td>{{ u.email }}</td>
+      <td>{{ u.message|default:"-" }}</td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="4">Пока никого нет</td></tr>
+    {% endfor %}
+  </table>
+</div>
+<!-- ==================== РАЗДЕЛ: ОШИБКИ ==================== -->
+<div class="section">
+  <h2>❌ Ошибки при выполнении</h2>
+  <table>
+    <tr>
+      <th>ID</th>
+      <th>ФИО</th>
+      <th>Email</th>
+      <th>ИИН</th>
+      <th>Комментарий / Сообщение</th>
+    </tr>
+    {% for u in error_users %}
+    <tr>
+      <td>{{ u.id }}</td>
+      <td>{{ u.full_name }}</td>
+      <td>{{ u.email }}</td>
+      <td>{{ u.iin }}</td>
+      <td>{{ u.message|default:"-" }}</td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="5">Ошибок нет 🎉</td></tr>
+    {% endfor %}
+  </table>
+</div>
+
+<!-- ==================== РАЗДЕЛ: СДАВШИЕ ТЕСТ ==================== -->
+<div class="section">
+  <h2>🧠 Сдавшие тест</h2>
+  <table>
+    <tr>
+      <th>ID</th>
+      <th>ФИО</th>
+      <th>Email</th>
+      <th>Результат</th>
+      <th>Комментарий</th>
+    </tr>
+    {% for u in tested_users %}
+    <tr>
+      <td>{{ u.id }}</td>
+      <td>{{ u.full_name }}</td>
+      <td>{{ u.email }}</td>
+      <td>{{ u.score|default:"-" }}</td>
+      <td>{{ u.message|default:"-" }}</td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="5">Пока никого нет</td></tr>
+    {% endfor %}
+  </table>
+</div>
+
+<!-- ==================== РАЗДЕЛ: СЕРТИФИКАТЫ ==================== -->
+<div class="section">
+  <h2>📜 Сертификаты скачаны</h2>
+  <table>
+    <tr>
+      <th>ID</th>
+      <th>ФИО</th>
+      <th>Email</th>
 
   <!-- Поиск и фильтрация -->
   <div class="section">

@@ -6,70 +6,74 @@ from main.models import UserAccount
 
 
 class Command(BaseCommand):
-    help = "Импорт пользователей из Excel (берёт №, ИИН/БИН, ФИО из скобок)"
+    help = "Импорт данных (БИН и ФИО руководителя) из первых 8 листов Excel"
 
     def handle(self, *args, **options):
-        # 📂 Укажи здесь путь к Excel-файлу (относительно manage.py или абсолютный)
-        excel_path = Path("main/management/commands/excel_date/ИП-ТОО Кентау.xlsx")
-
+        # 📂 Укажи путь к Excel-файлу
+        excel_path = Path("main/management/commands/excel_date/Копия СПИСОК_ДЛЯ_ОТДЕЛОВ_АКИМАТА_общий_(1)(1).xls")
 
         if not excel_path.exists():
             self.stderr.write(self.style.ERROR(f"❌ Файл не найден: {excel_path.resolve()}"))
             return
 
-        # Читаем Excel-файл
-        df = pd.read_excel(excel_path, engine="openpyxl", dtype=str).fillna("")
+        # Считываем имена всех листов
+        xls = pd.ExcelFile(excel_path)
 
-        # Определяем нужные колонки
-        col_num, col_iin, col_name = None, None, None
-        for c in df.columns:
-            low = str(c).lower()
-            if "иин" in low or "бин" in low:
-                col_iin = c
-            elif "наимен" in low or "фио" in low:
-                col_name = c
-            elif "№" in low or "номер" in low:
-                col_num = c
-
-        if not col_iin or not col_name:
-            self.stderr.write(self.style.ERROR("Не найдены нужные колонки в Excel!"))
-            return
+        # Берём только первые 8
+        sheet_names = xls.sheet_names[:10]
 
         added = 0
         skipped = 0
 
-        for _, row in df.iterrows():
-            iin = str(row.get(col_iin, "")).strip()
-            name_raw = str(row.get(col_name, "")).strip()
+        for sheet in sheet_names:
+            self.stdout.write(self.style.NOTICE(f"📄 Обработка листа: {sheet}"))
+            df = pd.read_excel(xls, sheet_name=sheet, dtype=str).fillna("")
 
-            # Извлекаем текст внутри скобок
-            match = re.search(r"\(([^)]+)\)", name_raw)
-            full_name = match.group(1).strip() if match else name_raw.strip()
+            # Поиск колонок
+            col_bin, col_name = None, None
+            for c in df.columns:
+                low = str(c).lower()
+                if "бин" in low:
+                    col_bin = c
+                elif "басшы" in low or "фио" in low or "таә" in low:
+                    col_name = c
 
-            if not iin or not full_name:
+            if not col_bin or not col_name:
+                self.stderr.write(self.style.WARNING(f"⚠️ Пропущен лист '{sheet}' — нет нужных колонок"))
                 continue
 
-            email = f"{iin}@mail.ru"
+            for _, row in df.iterrows():
+                bin_val = str(row.get(col_bin, "")).strip()
+                name_raw = str(row.get(col_name, "")).strip()
 
-            # Проверяем, есть ли уже пользователь
-            if UserAccount.objects.filter(iin=iin).exists():
-                skipped += 1
-                continue
+                # Если БИН невалидный или пустой — пропускаем
+                if not bin_val or not re.match(r"^\d{12}$", bin_val):
+                    continue
 
-            # Создаём нового пользователя
-            UserAccount.objects.create(
-                iin=iin,
-                full_name=full_name,
-                email=email,
-                password="Aa123456",
-                status="pending"
-            )
-            added += 1
+                full_name = name_raw.strip()
+                if not full_name:
+                    continue
+
+                email = f"{bin_val}@mail.ru"
+
+                # Проверяем дубликаты
+                if UserAccount.objects.filter(iin=bin_val).exists():
+                    skipped += 1
+                    continue
+
+                # Создаём новую запись
+                UserAccount.objects.create(
+                    iin=bin_val,  # можно оставить поле iin, если в модели нет отдельного "bin"
+                    full_name=full_name,
+                    email=email,
+                    password="Aa123456",
+                    status="pending"
+                )
+                added += 1
 
         self.stdout.write(
             self.style.SUCCESS(
                 f"✅ Импорт завершён: добавлено {added}, пропущено {skipped}\n"
-                f"📄 Источник: {excel_path.resolve()}"
+                f"📂 Источник: {excel_path.resolve()}"
             )
         )
-
